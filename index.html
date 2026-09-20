@@ -23,7 +23,7 @@ dialog{width:min(540px,calc(100vw - 20px));background:var(--panel);color:var(--t
 @media(max-width:700px){main{padding:10px 10px 70px}.summary{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}.form{grid-template-columns:1fr}.wide{grid-column:auto}.head{align-items:flex-start;flex-direction:column}.actions{width:100%}.actions .btn{flex:1}}
 </style></head>
 <body><main>
-<h1>📊 Mein Depot Dashboard</h1><div class="sub">v3.4 · Live-Kurse · TR-Sicherheitspuffer · Handy-Ansicht</div><div class="help">Datenschutz: Depotdaten und API-Key werden nur lokal in deinem Browser gespeichert. Im öffentlichen GitHub-Code sind keine persönlichen Depotdaten hinterlegt. Kursabweichungen zu Trade Republic bis etwa ±0,5 % werden als Sicherheitspuffer behandelt.</div>
+<h1>📊 Mein Depot Dashboard</h1><div class="sub">v3.5 · Live-Kurse · TR-Kurse für Europa · Handy-Ansicht</div><div class="help">Datenschutz: Depotdaten und API-Key werden nur lokal in deinem Browser gespeichert. Im öffentlichen GitHub-Code sind keine persönlichen Depotdaten hinterlegt. Kursabweichungen zu Trade Republic bis etwa ±0,5 % werden als Sicherheitspuffer behandelt.</div>
 
 <section class="summary">
 <div class="box"><small>Depotwert</small><strong id="sValue">–</strong></div>
@@ -35,7 +35,7 @@ dialog{width:min(540px,calc(100vw - 20px));background:var(--panel);color:var(--t
 <section class="panel">
 <div class="head"><h2>Live-Kurse</h2><div class="actions"><button class="btn primary" onclick="refreshGroup('positions')">Depot live</button><button class="btn" onclick="refreshGroup('watch')">Watchlist live</button></div></div>
 <div id="liveStatus" class="status">Noch nicht aktualisiert.</div><div class="progress"><div id="bar"></div></div>
-<div class="help">Live-Kurse: Twelve Data. US-Aktien werden mit deinem Basic-Tarif geladen. Bei europäischen Börsen zeigt die App lieber keinen Kurs als versehentlich eine gleichnamige Aktie von einer anderen Börse. Fremdwährungen werden automatisch in EUR umgerechnet. <strong>TR-Sicherheitspuffer ±0,5 % aktiv:</strong> Liegt ein Kurs nur knapp an Stop oder Alarmmarke, zeigt die App zunächst eine Prüfzone statt eines bestätigten Signals. Maßgeblich bleibt der Kurs in Trade Republic.</div>
+<div class="help">Live-Kurse: US-Aktien werden automatisch über Twelve Data geladen. Für europäische Werte nutzt du den Button <strong>TR-Kurs</strong> und trägst den aktuellen Trade-Republic-Kurs in Euro ein. Die App speichert Kurs und Uhrzeit lokal. <strong>TR-Sicherheitspuffer ±0,5 % aktiv:</strong> Liegt ein Kurs nur knapp an Stop oder Alarmmarke, zeigt die App zunächst eine Prüfzone statt eines bestätigten Signals.</div>
 </section>
 
 <section class="panel"><div class="head"><h2>Depot</h2><button class="btn" onclick="newItem('positions')">+ Position</button></div><div id="positions" class="grid"></div></section>
@@ -64,26 +64,15 @@ dialog{width:min(540px,calc(100vw - 20px));background:var(--panel);color:var(--t
 <label>Live-Symbol<input id="eSymbol" placeholder="ADBE"></label>
 <label>MIC/Börse<input id="eMic" placeholder="XNAS"></label>
 </div>
-<div class="actions" style="margin-top:12px"><button class="btn primary" onclick="saveEdit()">Speichern</button><button class="btn" onclick="testEdited()">Live testen</button><button id="del" class="btn danger" onclick="delEdit()">Löschen</button><button class="btn" onclick="dlg.close()">Schließen</button></div>
+<div class="actions" style="margin-top:12px"><button class="btn primary" onclick="saveEdit()">Speichern</button><button class="btn" onclick="testEdited()">Live testen</button><button id="trBtn" class="btn primary" onclick="manualTrPrice(edit.g,edit.id)">TR-Kurs</button><button id="del" class="btn danger" onclick="delEdit()">Löschen</button><button class="btn" onclick="dlg.close()">Schließen</button></div>
 <div id="editMsg" class="status"></div>
 </dialog>
 
 <script>
-const PRESET={"cash": 0, "positions": [], "watch": []},STORE='depotDashboardV3',APPVER='3.4',TR_TOL=0.005;let state=load(),edit={};
-(function upgradeTo34(){
-  if(localStorage.getItem('depotDashboardAppVersion')!==APPVER){
-    for(const g of ['positions','watch']){
-      for(const x of state[g]||[]){
-        x.currentEur=null;
-        x.nativePrice=null;
-        x.nativeCurrency=null;
-        x.lastUpdated=null;
-        x.lastError=null;
-      }
-    }
-    localStorage.setItem(STORE,JSON.stringify(state));
-    localStorage.setItem('depotDashboardAppVersion',APPVER);
-  }
+const PRESET={"cash": 0, "positions": [], "watch": []},STORE='depotDashboardV3',APPVER='3.5',TR_TOL=0.005;let state=load(),edit={};
+(function upgradeTo35(){
+  // Version 3.5 erhält bestehende Depotdaten und bereits gespeicherte Kurse.
+  localStorage.setItem('depotDashboardAppVersion',APPVER);
 })();
 const $=id=>document.getElementById(id),clone=o=>JSON.parse(JSON.stringify(o));
 function load(){try{return norm(JSON.parse(localStorage.getItem(STORE))||clone(PRESET))}catch{return norm(clone(PRESET))}}
@@ -91,11 +80,37 @@ function norm(s){s.cash=+s.cash||0;for(const g of ['positions','watch'])s[g]=(s[
 function save(){localStorage.setItem(STORE,JSON.stringify(state));render()}
 function eur(n){return new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(+n||0)}
 function n2(n){return new Intl.NumberFormat('de-DE',{maximumFractionDigits:2}).format(+n||0)}
+const US_MICS=new Set(['XNAS','XNYS','XNGS','XNMS','XNCM','ARCX','BATS']);
+function isUS(x){return US_MICS.has(String(x?.mic||'').toUpperCase())}
+function sourceLabel(x){
+  if(x?.priceSource==='TR manuell')return 'TR manuell';
+  if(x?.priceSource==='Twelve Data')return 'Twelve Data';
+  return '';
+}
+function manualTrPrice(g,id){
+  const x=state[g].find(v=>v.id===id);
+  if(!x)return;
+  const current=x.currentEur?String(x.currentEur.toFixed(2)).replace('.',','):'';
+  const raw=prompt('Aktuellen Trade-Republic-Kurs für '+x.name+' in € eingeben:',current);
+  if(raw===null)return;
+  const value=Number(String(raw).trim().replace(',','.'));
+  if(!Number.isFinite(value)||value<=0){
+    alert('Bitte einen gültigen Kurs größer 0 eingeben.');
+    return;
+  }
+  x.currentEur=value;
+  x.nativePrice=value;
+  x.nativeCurrency='EUR';
+  x.lastUpdated=new Date().toISOString();
+  x.lastError=null;
+  x.priceSource='TR manuell';
+  save();
+}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function t(iso){if(!iso)return'–';return new Intl.DateTimeFormat('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(iso))}
 function badges(a,current){return (a?.length?a.map(x=>{let near=current&&Math.abs(current-x)/x<=TR_TOL;return `<span class="badge ${near?'warn':''}">${eur(x)}</span>`}).join(''):'<span class="muted">keine</span>')}
 function pStatus(p){
-  if(!p.currentEur)return[p.lastError?('Kein Live-Kurs · '+p.lastError):'Kein Live-Kurs',''];
+  if(!p.currentEur)return[!isUS(p)?'TR-Kurs manuell eintragen':(p.lastError?('Kein Live-Kurs · '+p.lastError):'Kein Live-Kurs'),''];
 
   if(p.stop){
     const d=(p.currentEur-p.stop)/p.stop;
@@ -112,7 +127,7 @@ function pStatus(p){
   return['Im Bereich','good'];
 }
 function wStatus(w){
-  if(!w.currentEur)return[w.lastError?('Kein Live-Kurs · '+w.lastError):'Kein Live-Kurs',''];
+  if(!w.currentEur)return[!isUS(w)?'TR-Kurs manuell eintragen':(w.lastError?('Kein Live-Kurs · '+w.lastError):'Kein Live-Kurs'),''];
   if(!w.alerts?.length)return['Beobachten',''];
 
   const a=[...w.alerts].sort((x,y)=>Math.abs(w.currentEur-x)-Math.abs(w.currentEur-y))[0];
@@ -125,8 +140,8 @@ function wStatus(w){
 }
 function render(){
  let tv=0,tc=0,pc=0,np=0;
- $('positions').innerHTML=state.positions.map(p=>{let cost=p.qty*p.buy+p.fee,has=!!p.currentEur,val=has?p.qty*p.currentEur:0,pnl=has?val-cost:null,s=pStatus(p);tc+=cost;if(has){tv+=val;pc+=cost;np++}return `<div class="card"><div class="top"><div><div class="name">${esc(p.name)}</div><div class="meta">${esc(p.symbol||'kein Symbol')} · ${esc(p.mic||'ohne MIC')} · ${t(p.lastUpdated)}</div></div><div><div class="price">${has?eur(p.currentEur):'–'}</div><button class="btn" onclick="openEdit('positions','${p.id}')">Bearbeiten</button></div></div><div class="kpis"><div class="kpi"><span>Einstand inkl. Gebühr</span><b>${eur(cost)}</b></div><div class="kpi"><span>G/V</span><b class="${pnl===null?'':pnl>=0?'good':'bad'}">${pnl===null?'–':eur(pnl)}</b></div><div class="kpi"><span>Stop</span><b>${p.stop?eur(p.stop):'–'}</b></div></div><div>${badges(p.alerts,p.currentEur)}</div><div class="status ${s[1]}">${s[0]}${p.nativePrice?' · '+n2(p.nativePrice)+' '+esc(p.nativeCurrency):''}</div></div>`}).join('');
- $('watch').innerHTML=state.watch.map(w=>{let s=wStatus(w);return `<div class="card"><div class="top"><div><div class="name">${esc(w.name)}</div><div class="meta">${esc(w.symbol||'kein Symbol')} · ${esc(w.mic||'ohne MIC')} · ${t(w.lastUpdated)}</div></div><div><div class="price">${w.currentEur?eur(w.currentEur):'–'}</div><button class="btn" onclick="openEdit('watch','${w.id}')">Bearbeiten</button></div></div><div>${badges(w.alerts,w.currentEur)}</div><div class="status ${s[1]}">${s[0]}${w.nativePrice?' · '+n2(w.nativePrice)+' '+esc(w.nativeCurrency):''}</div></div>`}).join('');
+ $('positions').innerHTML=state.positions.map(p=>{let cost=p.qty*p.buy+p.fee,has=!!p.currentEur,val=has?p.qty*p.currentEur:0,pnl=has?val-cost:null,s=pStatus(p);tc+=cost;if(has){tv+=val;pc+=cost;np++}return `<div class="card"><div class="top"><div><div class="name">${esc(p.name)}</div><div class="meta">${esc(p.symbol||'kein Symbol')} · ${esc(p.mic||'ohne MIC')} · ${t(p.lastUpdated)}${sourceLabel(p)?' · '+sourceLabel(p):''}</div></div><div><div class="price">${has?eur(p.currentEur):'–'}</div><button class="btn" onclick="openEdit('positions','${p.id}')">Bearbeiten</button>${!isUS(p)?`<button class="btn primary" onclick="manualTrPrice(\'positions\',\'${p.id}\')">TR-Kurs</button>`:''}</div></div><div class="kpis"><div class="kpi"><span>Einstand inkl. Gebühr</span><b>${eur(cost)}</b></div><div class="kpi"><span>G/V</span><b class="${pnl===null?'':pnl>=0?'good':'bad'}">${pnl===null?'–':eur(pnl)}</b></div><div class="kpi"><span>Stop</span><b>${p.stop?eur(p.stop):'–'}</b></div></div><div>${badges(p.alerts,p.currentEur)}</div><div class="status ${s[1]}">${s[0]}${p.nativePrice?' · '+n2(p.nativePrice)+' '+esc(p.nativeCurrency):''}</div></div>`}).join('');
+ $('watch').innerHTML=state.watch.map(w=>{let s=wStatus(w);return `<div class="card"><div class="top"><div><div class="name">${esc(w.name)}</div><div class="meta">${esc(w.symbol||'kein Symbol')} · ${esc(w.mic||'ohne MIC')} · ${t(w.lastUpdated)}${sourceLabel(w)?' · '+sourceLabel(w):''}</div></div><div><div class="price">${w.currentEur?eur(w.currentEur):'–'}</div><button class="btn" onclick="openEdit('watch','${w.id}')">Bearbeiten</button>${!isUS(w)?`<button class="btn primary" onclick="manualTrPrice(\'watch\',\'${w.id}\')">TR-Kurs</button>`:''}</div></div><div>${badges(w.alerts,w.currentEur)}</div><div class="status ${s[1]}">${s[0]}${w.nativePrice?' · '+n2(w.nativePrice)+' '+esc(w.nativeCurrency):''}</div></div>`}).join('');
  $('sCost').textContent=eur(tc);$('sValue').textContent=np?eur(tv):'–';let pe=$('sPnl');if(np){let p=tv-pc;pe.textContent=eur(p);pe.className=p>=0?'good':'bad'}else{pe.textContent='–';pe.className=''}$('sCash').textContent=eur(state.cash);$('cash').value=state.cash;$('apiKey').value=localStorage.getItem('tdKey')||'';
 }
 function key(){return $('apiKey').value.trim()||localStorage.getItem('tdKey')||''}
@@ -183,8 +198,55 @@ async function quote(x){
   };
 }
 const fx={EUR:1};async function rate(c){c=c||'EUR';if(fx[c])return fx[c];let r=await fetch(`https://api.frankfurter.dev/v2/rate/${c.toLowerCase()}/eur`);if(!r.ok)throw Error('EUR-Umrechnung fehlgeschlagen');let d=await r.json();return fx[c]=+d.rate}
-async function refreshOne(x){let q=await quote(x),f=await rate(q.c);x.nativePrice=q.p;x.nativeCurrency=q.c;x.currentEur=q.p*f;x.lastUpdated=new Date().toISOString();x.lastError=null}
-async function refreshGroup(g){if(!key()){setLive('Bitte zuerst API-Key eintragen.','bad');return}let a=state[g],ok=0;for(let i=0;i<a.length;i++){setLive(`Lade ${i+1}/${a.length}: ${a[i].name}`);$('bar').style.width=((i/a.length)*100)+'%';try{await refreshOne(a[i]);ok++}catch(e){a[i].lastError=e.message;if(/limit|credit|429/i.test(e.message)){setLive('API-Limit erreicht – bereits geladene Kurse bleiben gespeichert.','warn');break}}save();await new Promise(r=>setTimeout(r,300))}$('bar').style.width='100%';setLive(`${ok} von ${a.length} Kursen aktualisiert${ok<a.length?' – ggf. Symbol/MIC oder API-Limit prüfen.':''}`,ok<a.length?'warn':'good')}
+async function refreshOne(x){let q=await quote(x),f=await rate(q.c);x.nativePrice=q.p;x.nativeCurrency=q.c;x.currentEur=q.p*f;x.lastUpdated=new Date().toISOString();x.lastError=null;x.priceSource='Twelve Data'}
+async function refreshGroup(g){
+  if(!key()){setLive('Bitte zuerst API-Key eintragen.','bad');return}
+  const a=state[g];
+  const auto=a.filter(isUS);
+  let ok=0,done=0;
+
+  if(auto.length===0){
+    setLive('Keine automatisch unterstützten US-Werte in dieser Liste. Europäische Kurse bitte über „TR-Kurs“ eintragen.','warn');
+    return;
+  }
+
+  for(let i=0;i<a.length;i++){
+    const x=a[i];
+
+    if(!isUS(x)){
+      if(!x.currentEur)x.lastError=null;
+      continue;
+    }
+
+    done++;
+    setLive(`Lade ${done}/${auto.length}: ${x.name}`);
+    $('bar').style.width=((done-1)/auto.length*100)+'%';
+
+    try{
+      await refreshOne(x);
+      ok++;
+    }catch(e){
+      x.lastError=e.message;
+      if(/limit|credit|429/i.test(e.message)){
+        save();
+        setLive('API-Limit erreicht – bereits geladene Kurse bleiben gespeichert.','warn');
+        break;
+      }
+    }
+
+    save();
+    if(done<auto.length)await new Promise(r=>setTimeout(r,300));
+  }
+
+  $('bar').style.width='100%';
+  const euCount=a.length-auto.length;
+  setLive(
+    `${ok} von ${auto.length} US-Kursen aktualisiert`+
+    (euCount?` · ${euCount} Europa-Wert${euCount===1?'':'e'} über TR-Kurs`:'')+
+    (ok<auto.length?' · ggf. API-Limit/Symbol prüfen.':''),
+    ok<auto.length?'warn':'good'
+  );
+}
 function setLive(m,c=''){$('liveStatus').textContent=m;$('liveStatus').className='status '+c}
 async function testApi(){
   saveKey();
@@ -198,7 +260,7 @@ async function testApi(){
 }
 function newItem(g){edit={g,id:(g==='positions'?'p':'w')+Date.now(),fresh:true};fill(g==='positions'?{name:'',qty:1,buy:0,fee:1,stop:0,alerts:[],symbol:'',mic:''}:{name:'',alerts:[],symbol:'',mic:''})}
 function openEdit(g,id){edit={g,id,fresh:false};fill(state[g].find(x=>x.id===id))}
-function fill(x){$('dlgTitle').textContent=(edit.fresh?'Neu: ':'Bearbeiten: ')+(edit.g==='positions'?'Depotposition':'Watchlist');$('eName').value=x.name||'';$('eQty').value=x.qty??1;$('eBuy').value=x.buy??0;$('eFee').value=x.fee??1;$('eStop').value=x.stop??0;$('eAlerts').value=(x.alerts||[]).join(', ');$('eSymbol').value=x.symbol||'';$('eMic').value=x.mic||'';document.querySelectorAll('.pos').forEach(e=>e.style.display=edit.g==='positions'?'block':'none');$('del').style.display=edit.fresh?'none':'inline-block';$('editMsg').textContent='';$('dlg').showModal()}
+function fill(x){$('dlgTitle').textContent=(edit.fresh?'Neu: ':'Bearbeiten: ')+(edit.g==='positions'?'Depotposition':'Watchlist');$('eName').value=x.name||'';$('eQty').value=x.qty??1;$('eBuy').value=x.buy??0;$('eFee').value=x.fee??1;$('eStop').value=x.stop??0;$('eAlerts').value=(x.alerts||[]).join(', ');$('eSymbol').value=x.symbol||'';$('eMic').value=x.mic||'';document.querySelectorAll('.pos').forEach(e=>e.style.display=edit.g==='positions'?'block':'none');$('del').style.display=edit.fresh?'none':'inline-block';$('trBtn').style.display=(!edit.fresh&&!isUS(x))?'inline-block':'none';$('editMsg').textContent='';$('dlg').showModal()}
 function parseAlerts(){return $('eAlerts').value.split(/[;, ]+/).map(v=>+v.replace(',','.')).filter(v=>v>0)}
 function obj(){let o={id:edit.id,name:$('eName').value.trim(),alerts:parseAlerts(),symbol:$('eSymbol').value.trim().toUpperCase(),mic:$('eMic').value.trim().toUpperCase()};if(edit.g==='positions')Object.assign(o,{qty:+$('eQty').value||0,buy:+$('eBuy').value||0,fee:+$('eFee').value||0,stop:+$('eStop').value||0});return o}
 function saveEdit(){let o=obj();if(!o.name){$('editMsg').textContent='Name fehlt.';return}if(edit.fresh)state[edit.g].push(o);else Object.assign(state[edit.g].find(x=>x.id===edit.id),o);save();$('dlg').close()}
