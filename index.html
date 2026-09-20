@@ -23,7 +23,7 @@ dialog{width:min(540px,calc(100vw - 20px));background:var(--panel);color:var(--t
 @media(max-width:700px){main{padding:10px 10px 70px}.summary{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}.form{grid-template-columns:1fr}.wide{grid-column:auto}.head{align-items:flex-start;flex-direction:column}.actions{width:100%}.actions .btn{flex:1}}
 </style></head>
 <body><main>
-<h1>📊 Mein Depot Dashboard</h1><div class="sub">v3 · Live-Kurse · Bearbeiten · Handy-Ansicht</div><div class="help">Datenschutz: Depotdaten und API-Key werden nur lokal in deinem Browser gespeichert. Im öffentlichen GitHub-Code sind keine persönlichen Depotdaten hinterlegt.</div>
+<h1>📊 Mein Depot Dashboard</h1><div class="sub">v3.1 · Live-Kurse · Bearbeiten · Handy-Ansicht</div><div class="help">Datenschutz: Depotdaten und API-Key werden nur lokal in deinem Browser gespeichert. Im öffentlichen GitHub-Code sind keine persönlichen Depotdaten hinterlegt.</div>
 
 <section class="summary">
 <div class="box"><small>Depotwert</small><strong id="sValue">–</strong></div>
@@ -48,7 +48,7 @@ dialog{width:min(540px,calc(100vw - 20px));background:var(--panel);color:var(--t
 <button class="btn primary" onclick="saveKey()">API-Key speichern</button><button class="btn" onclick="testApi()">Verbindung testen</button>
 <label>Cashreserve €<input id="cash" type="number" step="0.01"></label><button class="btn" onclick="saveCash()">Cash speichern</button>
 </div><div id="apiMsg" class="status"></div>
-<div class="actions" style="margin-top:12px"><button class="btn" onclick="exportData()">Backup exportieren</button><button class="btn" onclick="file.click()">Backup importieren</button><input id="file" hidden type="file" accept=".json" onchange="importData(event)"><button class="btn danger" onclick="resetData()">Voreinstellung</button></div>
+<div class="actions" style="margin-top:12px"><button class="btn" onclick="exportData()">Backup exportieren</button><button class="btn" onclick="document.getElementById('file').click()">Backup importieren</button><input id="file" hidden type="file" accept=".json,application/json,text/plain" onchange="importData(event)"><button class="btn" onclick="storageTest()">Speichertest</button><button class="btn danger" onclick="resetData()">Voreinstellung</button></div>
 </section>
 </main>
 
@@ -105,7 +105,65 @@ async function testEdited(){try{let o=obj(),q=await quote(o),f=await rate(q.c);$
 function delEdit(){if(confirm('Eintrag wirklich löschen?')){state[edit.g]=state[edit.g].filter(x=>x.id!==edit.id);save();$('dlg').close()}}
 function saveCash(){state.cash=+$('cash').value||0;save()}
 function exportData(){let b=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='depot-dashboard-v3-backup.json';a.click();URL.revokeObjectURL(a.href)}
-function importData(e){let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=()=>{try{state=norm(JSON.parse(r.result));save();alert('Backup importiert.')}catch{alert('Ungültige Datei.')}};r.readAsText(f)}
+async function importData(e){
+  const input=e.target;
+  const f=input.files && input.files[0];
+  if(!f)return;
+  try{
+    let txt;
+    if(typeof f.text==='function'){
+      txt=await f.text();
+    }else{
+      txt=await new Promise((resolve,reject)=>{
+        const r=new FileReader();
+        r.onload=()=>resolve(String(r.result||''));
+        r.onerror=()=>reject(r.error||new Error('Datei konnte nicht gelesen werden.'));
+        r.readAsText(f,'UTF-8');
+      });
+    }
+    txt=String(txt||'').replace(/^\uFEFF/,'').trim();
+    if(!txt)throw new Error('Die ausgewählte Datei ist leer.');
+    const parsed=JSON.parse(txt);
+    if(!parsed || typeof parsed!=='object' || Array.isArray(parsed))
+      throw new Error('Die Datei enthält kein gültiges Depot-Backup.');
+    if(!Array.isArray(parsed.positions))
+      throw new Error('Im Backup fehlt die Depotliste „positions“.');
+    if(!Array.isArray(parsed.watch))
+      throw new Error('Im Backup fehlt die Watchlist „watch“.');
+
+    const next=norm(parsed);
+
+    try{
+      localStorage.setItem(STORE,JSON.stringify(next));
+    }catch(storageError){
+      throw new Error('Der Browser konnte die Daten nicht lokal speichern: '+(storageError.message||storageError));
+    }
+
+    state=next;
+    try{
+      render();
+    }catch(renderError){
+      throw new Error('Die Daten wurden gespeichert, konnten aber nicht angezeigt werden: '+(renderError.message||renderError));
+    }
+
+    alert(`Backup importiert: ${state.positions.length} Depotpositionen und ${state.watch.length} Watchlist-Einträge.`);
+  }catch(err){
+    alert('Import fehlgeschlagen: '+(err && err.message ? err.message : String(err)));
+  }finally{
+    input.value='';
+  }
+}
+function storageTest(){
+  try{
+    const k='depotDashboardStorageTest';
+    localStorage.setItem(k,'ok');
+    const ok=localStorage.getItem(k)==='ok';
+    localStorage.removeItem(k);
+    alert(ok?'Lokaler Speicher funktioniert.':'Lokaler Speicher konnte nicht geprüft werden.');
+  }catch(err){
+    alert('Lokaler Speicher funktioniert nicht: '+(err && err.message ? err.message : String(err)));
+  }
+}
 function resetData(){if(confirm('Voreinstellung wiederherstellen?')){state=norm(clone(PRESET));save()}}
 render();
 </script></body></html>
