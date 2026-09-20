@@ -20,16 +20,42 @@ main{max-width:1100px;margin:auto;padding:14px 14px 80px}h1{font-size:1.45rem;ma
 input{width:100%;padding:10px;border-radius:9px;border:1px solid var(--line);background:#0e1728;color:var(--txt);font:inherit}.form{display:grid;grid-template-columns:1fr 1fr;gap:9px}.wide{grid-column:1/-1}label{font-size:.75rem;color:var(--muted)}
 dialog{width:min(540px,calc(100vw - 20px));background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:15px;padding:14px}dialog::backdrop{background:rgba(0,0,0,.7)}
 .progress{height:6px;background:#0e1728;border-radius:99px;overflow:hidden;margin-top:8px}.progress div{height:100%;background:var(--blue);width:0%}
-@media(max-width:700px){main{padding:10px 10px 70px}.summary{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}.form{grid-template-columns:1fr}.wide{grid-column:auto}.head{align-items:flex-start;flex-direction:column}.actions{width:100%}.actions .btn{flex:1}}
+
+.cockpit{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:10px}
+.riskbox{background:#0e1728;border:1px solid var(--line);border-radius:12px;padding:11px}
+.riskbox small{display:block;color:var(--muted);font-size:.72rem}
+.riskbox strong{display:block;font-size:1.05rem;margin-top:4px}
+.risklist{display:grid;gap:7px;margin-top:10px}
+.riskrow{background:#0e1728;border:1px solid var(--line);border-radius:11px;padding:10px}
+.riskrowtop{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.riskrow .small{font-size:.72rem;color:var(--muted);margin-top:3px}
+.meter{height:6px;background:#162236;border-radius:99px;overflow:hidden;margin-top:8px}
+.meter>span{display:block;height:100%;background:currentColor;border-radius:99px}
+.note{margin-top:7px;padding:7px 8px;background:#101a2b;border-radius:8px;color:var(--muted);font-size:.75rem}
+.kpis4{grid-template-columns:repeat(4,1fr)}
+
+@media(max-width:700px){main{padding:10px 10px 70px}.summary{grid-template-columns:1fr 1fr}.cockpit{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}.form{grid-template-columns:1fr}.wide{grid-column:auto}.head{align-items:flex-start;flex-direction:column}.actions{width:100%}.actions .btn{flex:1}.kpis4{grid-template-columns:1fr 1fr}}
 </style></head>
 <body><main>
-<h1>📊 Mein Depot Dashboard</h1><div class="sub">v3.5 · Live-Kurse · TR-Kurse für Europa · Handy-Ansicht</div><div class="help">Datenschutz: Depotdaten und API-Key werden nur lokal in deinem Browser gespeichert. Im öffentlichen GitHub-Code sind keine persönlichen Depotdaten hinterlegt. Kursabweichungen zu Trade Republic bis etwa ±0,5 % werden als Sicherheitspuffer behandelt.</div>
+<h1>📊 Mein Depot Dashboard</h1><div class="sub">v3.6 · Risiko-&-Alarm-Cockpit · Live-Kurse · Handy-Ansicht</div><div class="help">Datenschutz: Depotdaten und API-Key werden nur lokal in deinem Browser gespeichert. Im öffentlichen GitHub-Code sind keine persönlichen Depotdaten hinterlegt. Neu in v3.6: Risiko-&-Alarm-Cockpit mit Stop-Abständen, Risiko bis Stop, nächster Alarmmarke und eigenen Notizen.</div>
 
 <section class="summary">
 <div class="box"><small>Depotwert</small><strong id="sValue">–</strong></div>
 <div class="box"><small>Einstand</small><strong id="sCost">–</strong></div>
 <div class="box"><small>Gewinn/Verlust</small><strong id="sPnl">–</strong></div>
 <div class="box"><small>Cash</small><strong id="sCash">–</strong></div>
+</section>
+
+<section class="panel">
+<div class="head"><h2>🛡️ Risiko & Alarme</h2><div class="status">Berechnet aus den zuletzt gespeicherten Kursen</div></div>
+<div class="cockpit">
+  <div class="riskbox"><small>Risiko bis zu allen Stops</small><strong id="riskTotal">–</strong><div class="status">Wertverlust vom aktuellen Kurs bis Stop</div></div>
+  <div class="riskbox"><small>Risiko in % des Depotwerts</small><strong id="riskPct">–</strong><div class="status">Nur Positionen mit Kurs + Stop</div></div>
+  <div class="riskbox"><small>Prüfzonen</small><strong id="riskZones">–</strong><div class="status">Stop/Alarm innerhalb ±0,5 %</div></div>
+  <div class="riskbox"><small>Nächste Marke</small><strong id="nearestMark">–</strong><div id="nearestMarkSub" class="status">–</div></div>
+</div>
+<div id="riskList" class="risklist"></div>
+<div class="help">„Risiko bis Stop“ ist der rechnerische Wertverlust vom aktuell gespeicherten Kurs bis zur Stop-Marke. Reale Ausführungen können wegen Kurslücken/Slippage abweichen. Stops und Alarmmarken bitte bei einer Prüfzone in Trade Republic kontrollieren.</div>
 </section>
 
 <section class="panel">
@@ -62,21 +88,21 @@ dialog{width:min(540px,calc(100vw - 20px));background:var(--panel);color:var(--t
 <label class="pos">Stop €<input id="eStop" type="number" step="0.01"></label>
 <label class="wide">Alarme € – getrennt mit Leerzeichen/Komma<input id="eAlerts" placeholder="205, 234"></label>
 <label>Live-Symbol<input id="eSymbol" placeholder="ADBE"></label>
-<label>MIC/Börse<input id="eMic" placeholder="XNAS"></label>
+<label>MIC/Börse<input id="eMic" placeholder="XNAS"></label><label class="wide">Eigene Notiz<input id="eNote" placeholder="z. B. bei 145 € neu prüfen"></label>
 </div>
 <div class="actions" style="margin-top:12px"><button class="btn primary" onclick="saveEdit()">Speichern</button><button class="btn" onclick="testEdited()">Live testen</button><button id="trBtn" class="btn primary" onclick="manualTrPrice(edit.g,edit.id)">TR-Kurs</button><button id="del" class="btn danger" onclick="delEdit()">Löschen</button><button class="btn" onclick="dlg.close()">Schließen</button></div>
 <div id="editMsg" class="status"></div>
 </dialog>
 
 <script>
-const PRESET={"cash": 0, "positions": [], "watch": []},STORE='depotDashboardV3',APPVER='3.5',TR_TOL=0.005;let state=load(),edit={};
-(function upgradeTo35(){
+const PRESET={"cash": 0, "positions": [], "watch": []},STORE='depotDashboardV3',APPVER='3.6',TR_TOL=0.005;let state=load(),edit={};
+(function upgradeTo36(){
   // Version 3.5 erhält bestehende Depotdaten und bereits gespeicherte Kurse.
   localStorage.setItem('depotDashboardAppVersion',APPVER);
 })();
 const $=id=>document.getElementById(id),clone=o=>JSON.parse(JSON.stringify(o));
 function load(){try{return norm(JSON.parse(localStorage.getItem(STORE))||clone(PRESET))}catch{return norm(clone(PRESET))}}
-function norm(s){s.cash=+s.cash||0;for(const g of ['positions','watch'])s[g]=(s[g]||[]).map((x,i)=>({...x,id:x.id||g+i,alerts:Array.isArray(x.alerts)?x.alerts.map(Number).filter(Number.isFinite):[],currentEur:+x.currentEur||null,nativePrice:+x.nativePrice||null}));return s}
+function norm(s){s.cash=+s.cash||0;for(const g of ['positions','watch'])s[g]=(s[g]||[]).map((x,i)=>({...x,id:x.id||g+i,alerts:Array.isArray(x.alerts)?x.alerts.map(Number).filter(Number.isFinite):[],currentEur:+x.currentEur||null,nativePrice:+x.nativePrice||null,note:String(x.note||'')}));return s}
 function save(){localStorage.setItem(STORE,JSON.stringify(state));render()}
 function eur(n){return new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(+n||0)}
 function n2(n){return new Intl.NumberFormat('de-DE',{maximumFractionDigits:2}).format(+n||0)}
@@ -138,11 +164,114 @@ function wStatus(w){
 
   return[`${d>0?'+':''}${n2(d*100)} % zur nächsten Marke`,''];
 }
+
+function pct(v){return Number.isFinite(v)?new Intl.NumberFormat('de-DE',{minimumFractionDigits:1,maximumFractionDigits:1}).format(v)+' %':'–'}
+function positionRisk(p){
+  if(!(p.currentEur>0) || !(p.stop>0) || !(p.qty>0))return null;
+  const perShare=Math.max(0,p.currentEur-p.stop);
+  const eurRisk=perShare*p.qty;
+  const pctRisk=p.currentEur>0?perShare/p.currentEur*100:0;
+  const cost=p.qty*p.buy+p.fee;
+  const stopValue=p.qty*p.stop;
+  const pnlAtStop=stopValue-cost;
+  return {eurRisk,pctRisk,pnlAtStop,stopValue};
+}
+function nearestAlert(x){
+  if(!(x.currentEur>0) || !x.alerts?.length)return null;
+  let a=[...x.alerts].sort((u,v)=>Math.abs(x.currentEur-u)-Math.abs(x.currentEur-v))[0];
+  let distPct=(x.currentEur-a)/a*100;
+  let distEur=x.currentEur-a;
+  return {price:a,distPct,distEur,absPct:Math.abs(distPct)};
+}
+function urgencyForPosition(p){
+  if(!(p.currentEur>0))return {level:4,label:'Kurs fehlt',cls:'',score:999};
+  if(p.stop>0){
+    const d=(p.currentEur-p.stop)/p.stop;
+    if(d<=-TR_TOL)return {level:0,label:'STOP PRÜFEN',cls:'bad',score:0};
+    if(Math.abs(d)<=TR_TOL)return {level:1,label:'STOP-PRÜFZONE',cls:'warn',score:Math.abs(d)*100};
+  }
+  const a=nearestAlert(p);
+  if(a && a.absPct<=TR_TOL*100)return {level:1,label:'ALARM PRÜFEN',cls:'warn',score:a.absPct};
+  return {level:3,label:'NORMAL',cls:'good',score:a?a.absPct:500};
+}
+function urgencyForWatch(w){
+  if(!(w.currentEur>0))return {level:4,label:'Kurs fehlt',cls:'',score:999};
+  const a=nearestAlert(w);
+  if(a && a.absPct<=TR_TOL*100)return {level:1,label:'ALARM PRÜFEN',cls:'warn',score:a.absPct};
+  return {level:3,label:'BEOBACHTEN',cls:'',score:a?a.absPct:500};
+}
+function renderRiskCockpit(){
+  const rows=[];
+  let totalRisk=0, riskBase=0, zoneCount=0;
+  let nearest=null;
+
+  for(const p of state.positions){
+    const u=urgencyForPosition(p);
+    if(u.level<=1)zoneCount++;
+    const r=positionRisk(p);
+    if(r){totalRisk+=r.eurRisk; riskBase+=p.currentEur*p.qty;}
+    const a=nearestAlert(p);
+    if(a && (!nearest || a.absPct<nearest.absPct))nearest={...a,name:p.name,kind:'Depot'};
+    rows.push({kind:'Depot',x:p,u,r,a});
+  }
+  for(const w of state.watch){
+    const u=urgencyForWatch(w);
+    if(u.level<=1)zoneCount++;
+    const a=nearestAlert(w);
+    if(a && (!nearest || a.absPct<nearest.absPct))nearest={...a,name:w.name,kind:'Watchlist'};
+    rows.push({kind:'Watchlist',x:w,u,r:null,a});
+  }
+
+  $('riskTotal').textContent=riskBase?eur(totalRisk):'–';
+  $('riskPct').textContent=riskBase?pct(totalRisk/riskBase*100):'–';
+  $('riskZones').textContent=String(zoneCount);
+
+  if(nearest){
+    $('nearestMark').textContent=nearest.name;
+    $('nearestMarkSub').textContent=`${nearest.kind} · ${eur(nearest.price)} · ${pct(nearest.absPct)} entfernt`;
+  }else{
+    $('nearestMark').textContent='–';
+    $('nearestMarkSub').textContent='Keine berechenbare Alarmmarke';
+  }
+
+  rows.sort((a,b)=>a.u.level-b.u.level || a.u.score-b.u.score || a.x.name.localeCompare(b.x.name,'de'));
+
+  $('riskList').innerHTML=rows.map(({kind,x,u,r,a})=>{
+    const stopDist=(x.currentEur>0&&x.stop>0)?((x.currentEur-x.stop)/x.currentEur*100):null;
+    const alarmTxt=a?`${eur(a.price)} · ${a.distPct>=0?'+':''}${pct(a.distPct)}`:'keine';
+    const riskTxt=r?`${eur(r.eurRisk)} · ${pct(r.pctRisk)}`:'–';
+    const stopResult=r?`${r.pnlAtStop>=0?'+':''}${eur(r.pnlAtStop)}`:'–';
+    const meterVal=a?Math.max(0,Math.min(100,100-a.absPct*10)):0;
+    return `<div class="riskrow">
+      <div class="riskrowtop">
+        <div>
+          <div class="name">${esc(x.name)} <span class="badge">${kind}</span></div>
+          <div class="small">${x.currentEur?eur(x.currentEur):'kein Kurs'} · ${sourceLabel(x)||'Quelle –'} · ${t(x.lastUpdated)}</div>
+        </div>
+        <div class="${u.cls}" style="font-weight:800;text-align:right">${u.label}</div>
+      </div>
+      ${kind==='Depot'?`<div class="kpis kpis4">
+        <div class="kpi"><span>Stop-Abstand</span><b>${stopDist===null?'–':pct(stopDist)}</b></div>
+        <div class="kpi"><span>Risiko bis Stop</span><b>${riskTxt}</b></div>
+        <div class="kpi"><span>Ergebnis bei Stop</span><b class="${r?(r.pnlAtStop>=0?'good':'bad'):''}">${stopResult}</b></div>
+        <div class="kpi"><span>Nächster Alarm</span><b>${alarmTxt}</b></div>
+      </div>`:`<div class="kpis">
+        <div class="kpi"><span>Nächster Alarm</span><b>${alarmTxt}</b></div>
+        <div class="kpi"><span>Abstand</span><b>${a?pct(a.absPct):'–'}</b></div>
+        <div class="kpi"><span>Status</span><b class="${u.cls}">${u.label}</b></div>
+      </div>`}
+      ${a?`<div class="meter ${u.cls||''}"><span style="width:${meterVal}%"></span></div>`:''}
+      ${x.note?`<div class="note">📝 ${esc(x.note)}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
 function render(){
  let tv=0,tc=0,pc=0,np=0;
- $('positions').innerHTML=state.positions.map(p=>{let cost=p.qty*p.buy+p.fee,has=!!p.currentEur,val=has?p.qty*p.currentEur:0,pnl=has?val-cost:null,s=pStatus(p);tc+=cost;if(has){tv+=val;pc+=cost;np++}return `<div class="card"><div class="top"><div><div class="name">${esc(p.name)}</div><div class="meta">${esc(p.symbol||'kein Symbol')} · ${esc(p.mic||'ohne MIC')} · ${t(p.lastUpdated)}${sourceLabel(p)?' · '+sourceLabel(p):''}</div></div><div><div class="price">${has?eur(p.currentEur):'–'}</div><button class="btn" onclick="openEdit('positions','${p.id}')">Bearbeiten</button>${!isUS(p)?`<button class="btn primary" onclick="manualTrPrice(\'positions\',\'${p.id}\')">TR-Kurs</button>`:''}</div></div><div class="kpis"><div class="kpi"><span>Einstand inkl. Gebühr</span><b>${eur(cost)}</b></div><div class="kpi"><span>G/V</span><b class="${pnl===null?'':pnl>=0?'good':'bad'}">${pnl===null?'–':eur(pnl)}</b></div><div class="kpi"><span>Stop</span><b>${p.stop?eur(p.stop):'–'}</b></div></div><div>${badges(p.alerts,p.currentEur)}</div><div class="status ${s[1]}">${s[0]}${p.nativePrice?' · '+n2(p.nativePrice)+' '+esc(p.nativeCurrency):''}</div></div>`}).join('');
- $('watch').innerHTML=state.watch.map(w=>{let s=wStatus(w);return `<div class="card"><div class="top"><div><div class="name">${esc(w.name)}</div><div class="meta">${esc(w.symbol||'kein Symbol')} · ${esc(w.mic||'ohne MIC')} · ${t(w.lastUpdated)}${sourceLabel(w)?' · '+sourceLabel(w):''}</div></div><div><div class="price">${w.currentEur?eur(w.currentEur):'–'}</div><button class="btn" onclick="openEdit('watch','${w.id}')">Bearbeiten</button>${!isUS(w)?`<button class="btn primary" onclick="manualTrPrice(\'watch\',\'${w.id}\')">TR-Kurs</button>`:''}</div></div><div>${badges(w.alerts,w.currentEur)}</div><div class="status ${s[1]}">${s[0]}${w.nativePrice?' · '+n2(w.nativePrice)+' '+esc(w.nativeCurrency):''}</div></div>`}).join('');
+ $('positions').innerHTML=state.positions.map(p=>{let cost=p.qty*p.buy+p.fee,has=!!p.currentEur,val=has?p.qty*p.currentEur:0,pnl=has?val-cost:null,s=pStatus(p);tc+=cost;if(has){tv+=val;pc+=cost;np++}return `<div class="card"><div class="top"><div><div class="name">${esc(p.name)}</div><div class="meta">${esc(p.symbol||'kein Symbol')} · ${esc(p.mic||'ohne MIC')} · ${t(p.lastUpdated)}${sourceLabel(p)?' · '+sourceLabel(p):''}</div></div><div><div class="price">${has?eur(p.currentEur):'–'}</div><button class="btn" onclick="openEdit('positions','${p.id}')">Bearbeiten</button>${!isUS(p)?`<button class="btn primary" onclick="manualTrPrice(\'positions\',\'${p.id}\')">TR-Kurs</button>`:''}</div></div><div class="kpis kpis4"><div class="kpi"><span>Einstand inkl. Gebühr</span><b>${eur(cost)}</b></div><div class="kpi"><span>G/V</span><b class="${pnl===null?'':pnl>=0?'good':'bad'}">${pnl===null?'–':eur(pnl)}</b></div><div class="kpi"><span>Stop</span><b>${p.stop?eur(p.stop):'–'}</b></div><div class="kpi"><span>Risiko bis Stop</span><b>${positionRisk(p)?eur(positionRisk(p).eurRisk):'–'}</b></div></div><div>${badges(p.alerts,p.currentEur)}</div>${p.note?`<div class="note">📝 ${esc(p.note)}</div>`:''}<div class="status ${s[1]}">${s[0]}${p.nativePrice?' · '+n2(p.nativePrice)+' '+esc(p.nativeCurrency):''}</div></div>`}).join('');
+ $('watch').innerHTML=state.watch.map(w=>{let s=wStatus(w);return `<div class="card"><div class="top"><div><div class="name">${esc(w.name)}</div><div class="meta">${esc(w.symbol||'kein Symbol')} · ${esc(w.mic||'ohne MIC')} · ${t(w.lastUpdated)}${sourceLabel(w)?' · '+sourceLabel(w):''}</div></div><div><div class="price">${w.currentEur?eur(w.currentEur):'–'}</div><button class="btn" onclick="openEdit('watch','${w.id}')">Bearbeiten</button>${!isUS(w)?`<button class="btn primary" onclick="manualTrPrice(\'watch\',\'${w.id}\')">TR-Kurs</button>`:''}</div></div><div>${badges(w.alerts,w.currentEur)}</div>${w.note?`<div class="note">📝 ${esc(w.note)}</div>`:''}<div class="status ${s[1]}">${s[0]}${w.nativePrice?' · '+n2(w.nativePrice)+' '+esc(w.nativeCurrency):''}</div></div>`}).join('');
  $('sCost').textContent=eur(tc);$('sValue').textContent=np?eur(tv):'–';let pe=$('sPnl');if(np){let p=tv-pc;pe.textContent=eur(p);pe.className=p>=0?'good':'bad'}else{pe.textContent='–';pe.className=''}$('sCash').textContent=eur(state.cash);$('cash').value=state.cash;$('apiKey').value=localStorage.getItem('tdKey')||'';
+ renderRiskCockpit();
 }
 function key(){return $('apiKey').value.trim()||localStorage.getItem('tdKey')||''}
 function saveKey(){let k=$('apiKey').value.trim();k?localStorage.setItem('tdKey',k):localStorage.removeItem('tdKey');$('apiMsg').textContent=k?'API-Key lokal gespeichert.':'API-Key entfernt.'}
@@ -258,11 +387,11 @@ async function testApi(){
     $('apiMsg').textContent='Fehler: '+e.message;
   }
 }
-function newItem(g){edit={g,id:(g==='positions'?'p':'w')+Date.now(),fresh:true};fill(g==='positions'?{name:'',qty:1,buy:0,fee:1,stop:0,alerts:[],symbol:'',mic:''}:{name:'',alerts:[],symbol:'',mic:''})}
+function newItem(g){edit={g,id:(g==='positions'?'p':'w')+Date.now(),fresh:true};fill(g==='positions'?{name:'',qty:1,buy:0,fee:1,stop:0,alerts:[],symbol:'',mic:'',note:''}:{name:'',alerts:[],symbol:'',mic:'',note:''})}
 function openEdit(g,id){edit={g,id,fresh:false};fill(state[g].find(x=>x.id===id))}
-function fill(x){$('dlgTitle').textContent=(edit.fresh?'Neu: ':'Bearbeiten: ')+(edit.g==='positions'?'Depotposition':'Watchlist');$('eName').value=x.name||'';$('eQty').value=x.qty??1;$('eBuy').value=x.buy??0;$('eFee').value=x.fee??1;$('eStop').value=x.stop??0;$('eAlerts').value=(x.alerts||[]).join(', ');$('eSymbol').value=x.symbol||'';$('eMic').value=x.mic||'';document.querySelectorAll('.pos').forEach(e=>e.style.display=edit.g==='positions'?'block':'none');$('del').style.display=edit.fresh?'none':'inline-block';$('trBtn').style.display=(!edit.fresh&&!isUS(x))?'inline-block':'none';$('editMsg').textContent='';$('dlg').showModal()}
+function fill(x){$('dlgTitle').textContent=(edit.fresh?'Neu: ':'Bearbeiten: ')+(edit.g==='positions'?'Depotposition':'Watchlist');$('eName').value=x.name||'';$('eQty').value=x.qty??1;$('eBuy').value=x.buy??0;$('eFee').value=x.fee??1;$('eStop').value=x.stop??0;$('eAlerts').value=(x.alerts||[]).join(', ');$('eSymbol').value=x.symbol||'';$('eMic').value=x.mic||'';$('eNote').value=x.note||'';document.querySelectorAll('.pos').forEach(e=>e.style.display=edit.g==='positions'?'block':'none');$('del').style.display=edit.fresh?'none':'inline-block';$('trBtn').style.display=(!edit.fresh&&!isUS(x))?'inline-block':'none';$('editMsg').textContent='';$('dlg').showModal()}
 function parseAlerts(){return $('eAlerts').value.split(/[;, ]+/).map(v=>+v.replace(',','.')).filter(v=>v>0)}
-function obj(){let o={id:edit.id,name:$('eName').value.trim(),alerts:parseAlerts(),symbol:$('eSymbol').value.trim().toUpperCase(),mic:$('eMic').value.trim().toUpperCase()};if(edit.g==='positions')Object.assign(o,{qty:+$('eQty').value||0,buy:+$('eBuy').value||0,fee:+$('eFee').value||0,stop:+$('eStop').value||0});return o}
+function obj(){let o={id:edit.id,name:$('eName').value.trim(),alerts:parseAlerts(),symbol:$('eSymbol').value.trim().toUpperCase(),mic:$('eMic').value.trim().toUpperCase(),note:$('eNote').value.trim()};if(edit.g==='positions')Object.assign(o,{qty:+$('eQty').value||0,buy:+$('eBuy').value||0,fee:+$('eFee').value||0,stop:+$('eStop').value||0});return o}
 function saveEdit(){let o=obj();if(!o.name){$('editMsg').textContent='Name fehlt.';return}if(edit.fresh)state[edit.g].push(o);else Object.assign(state[edit.g].find(x=>x.id===edit.id),o);save();$('dlg').close()}
 async function testEdited(){try{let o=obj(),q=await quote(o),f=await rate(q.c);$('editMsg').textContent=`✓ ${n2(q.p)} ${q.c} = ${eur(q.p*f)}`}catch(e){$('editMsg').textContent='Fehler: '+e.message}}
 function delEdit(){if(confirm('Eintrag wirklich löschen?')){state[edit.g]=state[edit.g].filter(x=>x.id!==edit.id);save();$('dlg').close()}}
