@@ -57,7 +57,7 @@ dialog{width:min(540px,calc(100vw - 20px));background:var(--panel);color:var(--t
   <div class="txt"><b>📱 Als App installieren</b>Startet danach wie eine eigene App ohne normale Browserleiste.</div>
   <button id="installBtn" class="btn primary" type="button">App installieren</button>
 </div>
-<h1>📊 Mein Depot Dashboard</h1><div class="sub">v3.9 PWA · Automatisches API-Limit · Risiko-&-Alarm-Cockpit</div><div class="help">Datenschutz: Depotdaten und API-Key werden nur lokal in deinem Browser gespeichert. Im öffentlichen GitHub-Code sind keine persönlichen Depotdaten hinterlegt. PWA installiert: Die Oberfläche startet wie eine App und bleibt offline verfügbar; Live-Kurse benötigen weiterhin Internet. Neu in v3.9: Das Twelve-Data-Limit wird automatisch eingehalten; nötige Wartezeiten übernimmt die App selbst.</div>
+<h1>📊 Mein Depot Dashboard</h1><div class="sub">v4.0 PWA · Auto-Refresh · API-Limit · Risiko-&-Alarm-Cockpit</div><div class="help">Datenschutz: Depotdaten und API-Key werden nur lokal in deinem Browser gespeichert. Im öffentlichen GitHub-Code sind keine persönlichen Depotdaten hinterlegt. PWA installiert: Die Oberfläche startet wie eine App und bleibt offline verfügbar; Live-Kurse benötigen weiterhin Internet. Neu in v4.0: US-Kurse werden beim Öffnen und danach automatisch alle 10 Minuten aktualisiert, solange die App sichtbar ist. Europäische TR-Kurse bleiben manuell.</div>
 
 <section class="summary">
 <div class="box"><small>Depotwert</small><strong id="sValue">–</strong></div>
@@ -79,9 +79,11 @@ dialog{width:min(540px,calc(100vw - 20px));background:var(--panel);color:var(--t
 </section>
 
 <section class="panel">
-<div class="head"><h2>Live-Kurse</h2><div class="actions"><button class="btn primary" onclick="refreshGroup('positions')">Depot live</button><button class="btn" onclick="refreshGroup('watch')">Watchlist live</button></div></div>
-<div id="liveStatus" class="status">Noch nicht aktualisiert.</div><div class="progress"><div id="bar"></div></div>
-<div class="help">Live-Kurse: US-Aktien werden automatisch über Twelve Data geladen. Für europäische Werte nutzt du den Button <strong>TR-Kurs</strong> und trägst den aktuellen Trade-Republic-Kurs in Euro ein. Die App speichert Kurs und Uhrzeit lokal. <strong>TR-Sicherheitspuffer ±0,5 % aktiv:</strong> Liegt ein Kurs nur knapp an Stop oder Alarmmarke, zeigt die App zunächst eine Prüfzone statt eines bestätigten Signals.</div>
+<div class="head"><h2>Live-Kurse</h2><div class="actions"><button class="btn primary" onclick="refreshGroup('positions')">Depot live</button><button class="btn" onclick="refreshGroup('watch')">Watchlist live</button><button id="autoBtn" class="btn" onclick="toggleAutoRefresh()">Auto: AN</button></div></div>
+<div id="liveStatus" class="status">Noch nicht aktualisiert.</div>
+<div id="autoStatus" class="status">Auto-Refresh wird vorbereitet …</div>
+<div class="progress"><div id="bar"></div></div>
+<div class="help">US-Kurse: automatisch beim Öffnen und danach alle 10 Minuten, solange die App sichtbar ist. Das API-Limit-Management legt nötige Pausen zwischen Einzelabfragen selbst ein. Für europäische Werte nutzt du weiterhin <strong>TR-Kurs</strong>. <strong>TR-Sicherheitspuffer ±0,5 % aktiv.</strong></div>
 </section>
 
 <section class="panel"><div class="head"><h2>Depot</h2><button class="btn" onclick="newItem('positions')">+ Position</button></div><div id="positions" class="grid"></div></section>
@@ -115,8 +117,8 @@ dialog{width:min(540px,calc(100vw - 20px));background:var(--panel);color:var(--t
 </dialog>
 
 <script>
-const PRESET={"cash": 0, "positions": [], "watch": []},STORE='depotDashboardV3',APPVER='3.9',TR_TOL=0.005;let state=load(),edit={};
-(function upgradeTo39(){
+const PRESET={"cash": 0, "positions": [], "watch": []},STORE='depotDashboardV3',APPVER='4.0',TR_TOL=0.005;let state=load(),edit={};
+(function upgradeTo40(){
   // Version 3.5 erhält bestehende Depotdaten und bereits gespeicherte Kurse.
   localStorage.setItem('depotDashboardAppVersion',APPVER);
 })();
@@ -132,6 +134,13 @@ function isUS(x){return US_MICS.has(String(x?.mic||'').toUpperCase())}
 const API_LIMIT_KEY='tdApiLimiterV1';
 const API_MIN_GAP_MS=8000;
 let apiSlotQueue=Promise.resolve();
+
+const AUTO_REFRESH_KEY='depotAutoRefreshV1';
+const AUTO_LAST_KEY='depotAutoLastRefreshV1';
+const AUTO_INTERVAL_MS=10*60*1000;
+let autoTimer=null;
+let autoRefreshRunning=false;
+let refreshGroupRunning=false;
 
 function getLastApiCall(){
   const n=Number(localStorage.getItem(API_LIMIT_KEY)||0);
@@ -381,54 +390,169 @@ async function quote(x){
 }
 const fx={EUR:1};async function rate(c){c=c||'EUR';if(fx[c])return fx[c];let r=await fetch(`https://api.frankfurter.dev/v2/rate/${c.toLowerCase()}/eur`);if(!r.ok)throw Error('EUR-Umrechnung fehlgeschlagen');let d=await r.json();return fx[c]=+d.rate}
 async function refreshOne(x){let q=await quote(x),f=await rate(q.c);x.nativePrice=q.p;x.nativeCurrency=q.c;x.currentEur=q.p*f;x.lastUpdated=new Date().toISOString();x.lastError=null;x.priceSource='Twelve Data'}
-async function refreshGroup(g){
-  if(!key()){setLive('Bitte zuerst API-Key eintragen.','bad');return}
-  const a=state[g];
-  const auto=a.filter(isUS);
-  let ok=0,done=0;
+async function refreshGroup(g,opts={}){
+  const {silent=false,fromAuto=false}=opts;
 
-  if(auto.length===0){
-    setLive('Keine automatisch unterstützten US-Werte in dieser Liste. Europäische Kurse bitte über „TR-Kurs“ eintragen.','warn');
+  if(refreshGroupRunning){
+    if(!silent)setLive('Eine Kursaktualisierung läuft bereits.','warn');
+    return {ok:0,total:0,busy:true};
+  }
+
+  if(!key()){
+    if(!silent)setLive('Bitte zuerst API-Key eintragen.','bad');
+    return {ok:0,total:0,noKey:true};
+  }
+
+  refreshGroupRunning=true;
+  try{
+    const a=state[g];
+    const auto=a.filter(isUS);
+    let ok=0,done=0;
+
+    if(auto.length===0){
+      if(!silent)setLive('Keine automatisch unterstützten US-Werte in dieser Liste. Europäische Kurse bitte über „TR-Kurs“ eintragen.','warn');
+      return {ok:0,total:0};
+    }
+
+    for(let i=0;i<a.length;i++){
+      const x=a[i];
+
+      if(!isUS(x)){
+        if(!x.currentEur)x.lastError=null;
+        continue;
+      }
+
+      done++;
+      $('bar').style.width=((done-1)/auto.length*100)+'%';
+
+      try{
+        setLive(`Lade ${done}/${auto.length}: ${x.name} · API-Limit wird automatisch eingehalten`);
+        await refreshOne(x);
+        ok++;
+      }catch(e){
+        x.lastError=e.message;
+        if(/limit|credit|429/i.test(e.message)){
+          save();
+          setLive('Twelve Data meldet trotz Schutz ein Limit. Beim nächsten Versuch wartet die App automatisch.','warn');
+          break;
+        }
+      }
+
+      save();
+    }
+
+    $('bar').style.width='100%';
+    const euCount=a.length-auto.length;
+    if(!silent || fromAuto){
+      setLive(
+        `${ok} von ${auto.length} US-Kursen aktualisiert`+
+        (euCount?` · ${euCount} Europa-Wert${euCount===1?'':'e'} über TR-Kurs`:'')+
+        ` · API-Limit-Schutz aktiv`,
+        ok<auto.length?'warn':'good'
+      );
+    }
+    return {ok,total:auto.length};
+  }finally{
+    refreshGroupRunning=false;
+  }
+}
+function setLive(m,c=''){$('liveStatus').textContent=m;$('liveStatus').className='status '+c}
+
+function autoEnabled(){
+  const v=localStorage.getItem(AUTO_REFRESH_KEY);
+  return v===null ? true : v==='1';
+}
+function setAutoEnabled(on){
+  localStorage.setItem(AUTO_REFRESH_KEY,on?'1':'0');
+  updateAutoUi();
+  scheduleAutoRefresh();
+}
+function toggleAutoRefresh(){
+  const next=!autoEnabled();
+  setAutoEnabled(next);
+  if(next)setTimeout(()=>autoRefreshAll(true),200);
+}
+function updateAutoUi(){
+  const on=autoEnabled();
+  const b=$('autoBtn');
+  if(b)b.textContent='Auto: '+(on?'AN':'AUS');
+  const s=$('autoStatus');
+  if(!s)return;
+
+  if(!on){
+    s.textContent='Auto-Refresh ist ausgeschaltet.';
+    return;
+  }
+  if(document.hidden){
+    s.textContent='Auto-Refresh pausiert, solange die App nicht sichtbar ist.';
     return;
   }
 
-  for(let i=0;i<a.length;i++){
-    const x=a[i];
-
-    if(!isUS(x)){
-      if(!x.currentEur)x.lastError=null;
-      continue;
-    }
-
-    done++;
-    $('bar').style.width=((done-1)/auto.length*100)+'%';
-
-    try{
-      setLive(`Lade ${done}/${auto.length}: ${x.name} · API-Limit wird automatisch eingehalten`);
-      await refreshOne(x);
-      ok++;
-    }catch(e){
-      x.lastError=e.message;
-      if(/limit|credit|429/i.test(e.message)){
-        save();
-        setLive('Twelve Data meldet trotz Schutz ein Limit. Beim nächsten Versuch wartet die App automatisch.','warn');
-        break;
-      }
-    }
-
-    save();
+  const last=Number(localStorage.getItem(AUTO_LAST_KEY)||0);
+  if(!last){
+    s.textContent='Auto-Refresh aktiv · erste Aktualisierung startet automatisch.';
+    return;
   }
 
-  $('bar').style.width='100%';
-  const euCount=a.length-auto.length;
-  setLive(
-    `${ok} von ${auto.length} US-Kursen aktualisiert`+
-    (euCount?` · ${euCount} Europa-Wert${euCount===1?'':'e'} über TR-Kurs`:'')+
-    ` · API-Limit-Schutz aktiv`,
-    ok<auto.length?'warn':'good'
-  );
+  const next=last+AUTO_INTERVAL_MS;
+  const mins=Math.max(0,Math.ceil((next-Date.now())/60000));
+  s.textContent=mins<=0
+    ? 'Auto-Refresh aktiv · Aktualisierung ist fällig.'
+    : `Auto-Refresh aktiv · nächste Aktualisierung in ca. ${mins} Min.`;
 }
-function setLive(m,c=''){$('liveStatus').textContent=m;$('liveStatus').className='status '+c}
+function scheduleAutoRefresh(){
+  if(autoTimer){clearInterval(autoTimer);autoTimer=null;}
+  updateAutoUi();
+  if(!autoEnabled())return;
+
+  autoTimer=setInterval(()=>{
+    updateAutoUi();
+    if(document.hidden)return;
+    const last=Number(localStorage.getItem(AUTO_LAST_KEY)||0);
+    if(!last || Date.now()-last>=AUTO_INTERVAL_MS){
+      autoRefreshAll(false);
+    }
+  },30000);
+}
+async function autoRefreshAll(force=false){
+  if(!autoEnabled() || document.hidden || autoRefreshRunning)return;
+
+  const last=Number(localStorage.getItem(AUTO_LAST_KEY)||0);
+  if(!force && last && Date.now()-last<AUTO_INTERVAL_MS){
+    updateAutoUi();
+    return;
+  }
+
+  if(!key()){
+    setLive('Auto-Refresh wartet auf deinen Twelve-Data-API-Key.','warn');
+    updateAutoUi();
+    return;
+  }
+
+  autoRefreshRunning=true;
+  try{
+    setLive('Auto-Refresh gestartet …');
+    const p=await refreshGroup('positions',{silent:true,fromAuto:true});
+    const w=await refreshGroup('watch',{silent:true,fromAuto:true});
+
+    if(!(p&&p.busy) && !(w&&w.busy)){
+      localStorage.setItem(AUTO_LAST_KEY,String(Date.now()));
+    }
+    updateAutoUi();
+  }finally{
+    autoRefreshRunning=false;
+  }
+}
+
+document.addEventListener('visibilitychange',()=>{
+  updateAutoUi();
+  if(!document.hidden && autoEnabled()){
+    const last=Number(localStorage.getItem(AUTO_LAST_KEY)||0);
+    if(!last || Date.now()-last>=AUTO_INTERVAL_MS){
+      setTimeout(()=>autoRefreshAll(false),800);
+    }
+  }
+});
 async function testApi(){
   saveKey();
   try{
@@ -532,6 +656,8 @@ function storageTest(){
 }
 function resetData(){if(confirm('Voreinstellung wiederherstellen?')){state=norm(clone(PRESET));save()}}
 render();
+scheduleAutoRefresh();
+setTimeout(()=>autoRefreshAll(false),1500);
 </script>
 <script>
 let deferredInstallPrompt=null;
