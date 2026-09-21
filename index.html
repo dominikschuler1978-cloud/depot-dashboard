@@ -57,7 +57,7 @@ dialog{width:min(540px,calc(100vw - 20px));background:var(--panel);color:var(--t
   <div class="txt"><b>📱 Als App installieren</b>Startet danach wie eine eigene App ohne normale Browserleiste.</div>
   <button id="installBtn" class="btn primary" type="button">App installieren</button>
 </div>
-<h1>📊 Mein Depot Dashboard</h1><div class="sub">v3.8 PWA · Risiko-&-Alarm-Cockpit · Zeitstempel-Backups</div><div class="help">Datenschutz: Depotdaten und API-Key werden nur lokal in deinem Browser gespeichert. Im öffentlichen GitHub-Code sind keine persönlichen Depotdaten hinterlegt. PWA installiert: Die Oberfläche startet wie eine App und bleibt offline verfügbar; Live-Kurse benötigen weiterhin Internet. Backups erhalten jetzt automatisch Datum und Uhrzeit im Dateinamen.</div>
+<h1>📊 Mein Depot Dashboard</h1><div class="sub">v3.9 PWA · Automatisches API-Limit · Risiko-&-Alarm-Cockpit</div><div class="help">Datenschutz: Depotdaten und API-Key werden nur lokal in deinem Browser gespeichert. Im öffentlichen GitHub-Code sind keine persönlichen Depotdaten hinterlegt. PWA installiert: Die Oberfläche startet wie eine App und bleibt offline verfügbar; Live-Kurse benötigen weiterhin Internet. Neu in v3.9: Das Twelve-Data-Limit wird automatisch eingehalten; nötige Wartezeiten übernimmt die App selbst.</div>
 
 <section class="summary">
 <div class="box"><small>Depotwert</small><strong id="sValue">–</strong></div>
@@ -93,7 +93,7 @@ dialog{width:min(540px,calc(100vw - 20px));background:var(--panel);color:var(--t
 <label class="wide">Twelve Data API-Key<input id="apiKey" type="password" placeholder="API-Key einfügen"></label>
 <button class="btn primary" onclick="saveKey()">API-Key speichern</button><button class="btn" onclick="testApi()">Verbindung testen</button>
 <label>Cashreserve €<input id="cash" type="number" step="0.01"></label><button class="btn" onclick="saveCash()">Cash speichern</button>
-</div><div id="apiMsg" class="status"></div>
+</div><div id="apiMsg" class="status"></div><div class="help">API-Limit-Schutz: Zwischen Twelve-Data-Abfragen hält die App automatisch mindestens 8 Sekunden Abstand. Du kannst Depot, Watchlist und Verbindungstest nacheinander starten; nötige Wartezeiten übernimmt die App.</div>
 <div class="actions" style="margin-top:12px"><button class="btn" onclick="exportData()">Backup exportieren</button><button class="btn" onclick="document.getElementById('file').click()">Backup importieren</button><input id="file" hidden type="file" accept=".json,application/json,text/plain" onchange="importData(event)"><button class="btn" onclick="storageTest()">Speichertest</button><button class="btn danger" onclick="resetData()">Voreinstellung</button></div>
 </section>
 </main>
@@ -115,8 +115,8 @@ dialog{width:min(540px,calc(100vw - 20px));background:var(--panel);color:var(--t
 </dialog>
 
 <script>
-const PRESET={"cash": 0, "positions": [], "watch": []},STORE='depotDashboardV3',APPVER='3.8',TR_TOL=0.005;let state=load(),edit={};
-(function upgradeTo38(){
+const PRESET={"cash": 0, "positions": [], "watch": []},STORE='depotDashboardV3',APPVER='3.9',TR_TOL=0.005;let state=load(),edit={};
+(function upgradeTo39(){
   // Version 3.5 erhält bestehende Depotdaten und bereits gespeicherte Kurse.
   localStorage.setItem('depotDashboardAppVersion',APPVER);
 })();
@@ -128,6 +128,38 @@ function eur(n){return new Intl.NumberFormat('de-DE',{style:'currency',currency:
 function n2(n){return new Intl.NumberFormat('de-DE',{maximumFractionDigits:2}).format(+n||0)}
 const US_MICS=new Set(['XNAS','XNYS','XNGS','XNMS','XNCM','ARCX','BATS']);
 function isUS(x){return US_MICS.has(String(x?.mic||'').toUpperCase())}
+
+const API_LIMIT_KEY='tdApiLimiterV1';
+const API_MIN_GAP_MS=8000;
+let apiSlotQueue=Promise.resolve();
+
+function getLastApiCall(){
+  const n=Number(localStorage.getItem(API_LIMIT_KEY)||0);
+  return Number.isFinite(n)?n:0;
+}
+function setLastApiCall(ts){
+  localStorage.setItem(API_LIMIT_KEY,String(ts));
+}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
+function fmtWait(ms){
+  const s=Math.max(1,Math.ceil(ms/1000));
+  return s+' s';
+}
+function waitForApiSlot(label='Twelve Data'){
+  const job=apiSlotQueue.then(async()=>{
+    const last=getLastApiCall();
+    const now=Date.now();
+    const wait=Math.max(0,API_MIN_GAP_MS-(now-last));
+    if(wait>0){
+      setLive(`${label}: API-Limit-Schutz aktiv · warte ${fmtWait(wait)}`,'warn');
+      await sleep(wait);
+    }
+    setLastApiCall(Date.now());
+  });
+  apiSlotQueue=job.catch(()=>{});
+  return job;
+}
+
 function sourceLabel(x){
   if(x?.priceSource==='TR manuell')return 'TR manuell';
   if(x?.priceSource==='Twelve Data')return 'Twelve Data';
@@ -312,6 +344,7 @@ async function quote(x){
 
   u.searchParams.set('apikey',key());
 
+  await waitForApiSlot(x.name||x.symbol||'Twelve Data');
   const r=await fetch(u.toString());
   let d;
   try{d=await r.json()}catch{throw Error('Ungültige Antwort von Twelve Data.');}
@@ -368,23 +401,22 @@ async function refreshGroup(g){
     }
 
     done++;
-    setLive(`Lade ${done}/${auto.length}: ${x.name}`);
     $('bar').style.width=((done-1)/auto.length*100)+'%';
 
     try{
+      setLive(`Lade ${done}/${auto.length}: ${x.name} · API-Limit wird automatisch eingehalten`);
       await refreshOne(x);
       ok++;
     }catch(e){
       x.lastError=e.message;
       if(/limit|credit|429/i.test(e.message)){
         save();
-        setLive('API-Limit erreicht – bereits geladene Kurse bleiben gespeichert.','warn');
+        setLive('Twelve Data meldet trotz Schutz ein Limit. Beim nächsten Versuch wartet die App automatisch.','warn');
         break;
       }
     }
 
     save();
-    if(done<auto.length)await new Promise(r=>setTimeout(r,300));
   }
 
   $('bar').style.width='100%';
@@ -392,7 +424,7 @@ async function refreshGroup(g){
   setLive(
     `${ok} von ${auto.length} US-Kursen aktualisiert`+
     (euCount?` · ${euCount} Europa-Wert${euCount===1?'':'e'} über TR-Kurs`:'')+
-    (ok<auto.length?' · ggf. API-Limit/Symbol prüfen.':''),
+    ` · API-Limit-Schutz aktiv`,
     ok<auto.length?'warn':'good'
   );
 }
