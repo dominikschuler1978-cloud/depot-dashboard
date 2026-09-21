@@ -33,8 +33,11 @@ dialog{width:min(540px,calc(100vw - 20px));background:var(--panel);color:var(--t
 .meter>span{display:block;height:100%;background:currentColor;border-radius:99px}
 .note{margin-top:7px;padding:7px 8px;background:#101a2b;border-radius:8px;color:var(--muted);font-size:.75rem}
 .kpis4{grid-template-columns:repeat(4,1fr)}
+.historySummary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.historyEmpty{padding:12px;color:var(--muted);text-align:center;border:1px dashed var(--line);border-radius:10px;margin-top:10px}
+.sellInfo{background:#10283b;border:1px solid #1b4d6c;padding:10px;border-radius:10px;font-size:.8rem;line-height:1.4;margin:8px 0 12px}
 
-@media(max-width:700px){main{padding:10px 10px 70px}.summary{grid-template-columns:1fr 1fr}.cockpit{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}.form{grid-template-columns:1fr}.wide{grid-column:auto}.head{align-items:flex-start;flex-direction:column}.actions{width:100%}.actions .btn{flex:1}.kpis4{grid-template-columns:1fr 1fr}}
+@media(max-width:700px){main{padding:10px 10px 70px}.summary{grid-template-columns:1fr 1fr}.cockpit{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}.form{grid-template-columns:1fr}.wide{grid-column:auto}.head{align-items:flex-start;flex-direction:column}.actions{width:100%}.actions .btn{flex:1}.kpis4{grid-template-columns:1fr 1fr}.historySummary{grid-template-columns:1fr 1fr}}
 
 .installBanner{display:none;align-items:center;justify-content:space-between;gap:10px;margin:10px 0;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:#0e1728}
 .installBanner.show{display:flex}
@@ -57,7 +60,7 @@ dialog{width:min(540px,calc(100vw - 20px));background:var(--panel);color:var(--t
   <div class="txt"><b>📱 Als App installieren</b>Startet danach wie eine eigene App ohne normale Browserleiste.</div>
   <button id="installBtn" class="btn primary" type="button">App installieren</button>
 </div>
-<h1>📊 Mein Depot Dashboard</h1><div class="sub">v4.0 PWA · Auto-Refresh · API-Limit · Risiko-&-Alarm-Cockpit</div><div class="help">Datenschutz: Depotdaten und API-Key werden nur lokal in deinem Browser gespeichert. Im öffentlichen GitHub-Code sind keine persönlichen Depotdaten hinterlegt. PWA installiert: Die Oberfläche startet wie eine App und bleibt offline verfügbar; Live-Kurse benötigen weiterhin Internet. Neu in v4.0: US-Kurse werden beim Öffnen und danach automatisch alle 10 Minuten aktualisiert, solange die App sichtbar ist. Europäische TR-Kurse bleiben manuell.</div>
+<h1>📊 Mein Depot Dashboard</h1><div class="sub">v4.1 PWA · Verkäufe & Historie · Auto-Refresh · Risiko-Cockpit</div><div class="help">Datenschutz: Depotdaten und API-Key werden nur lokal in deinem Browser gespeichert. Im öffentlichen GitHub-Code sind keine persönlichen Depotdaten hinterlegt. PWA installiert: Die Oberfläche startet wie eine App und bleibt offline verfügbar; Live-Kurse benötigen weiterhin Internet. Neu in v4.1: Verkäufe werden mit Verkaufskurs und Gebühr gebucht, der Nettoerlös erhöht automatisch deine Cashreserve und der abgeschlossene Trade bleibt in der Historie erhalten. US-Kurse aktualisieren sich weiter automatisch.</div>
 
 <section class="summary">
 <div class="box"><small>Depotwert</small><strong id="sValue">–</strong></div>
@@ -87,6 +90,17 @@ dialog{width:min(540px,calc(100vw - 20px));background:var(--panel);color:var(--t
 </section>
 
 <section class="panel"><div class="head"><h2>Depot</h2><button class="btn" onclick="newItem('positions')">+ Position</button></div><div id="positions" class="grid"></div></section>
+
+<section class="panel">
+<div class="head"><h2>📚 Verkaufshistorie</h2><div class="status">Abgeschlossene Positionen</div></div>
+<div class="historySummary">
+  <div class="riskbox"><small>Realisierter G/V</small><strong id="histPnl">–</strong></div>
+  <div class="riskbox"><small>Netto-Verkaufserlöse</small><strong id="histProceeds">–</strong></div>
+  <div class="riskbox"><small>Abgeschlossene Trades</small><strong id="histCount">0</strong></div>
+</div>
+<div id="history" class="grid"></div>
+</section>
+
 <section class="panel"><div class="head"><h2>Watchlist</h2><button class="btn" onclick="newItem('watch')">+ Kandidat</button></div><div id="watch" class="grid"></div></section>
 
 <section class="panel">
@@ -112,19 +126,41 @@ dialog{width:min(540px,calc(100vw - 20px));background:var(--panel);color:var(--t
 <label>Live-Symbol<input id="eSymbol" placeholder="ADBE"></label>
 <label>MIC/Börse<input id="eMic" placeholder="XNAS"></label><label class="wide">Eigene Notiz<input id="eNote" placeholder="z. B. bei 145 € neu prüfen"></label>
 </div>
-<div class="actions" style="margin-top:12px"><button class="btn primary" onclick="saveEdit()">Speichern</button><button class="btn" onclick="testEdited()">Live testen</button><button id="trBtn" class="btn primary" onclick="manualTrPrice(edit.g,edit.id)">TR-Kurs</button><button id="del" class="btn danger" onclick="delEdit()">Löschen</button><button class="btn" onclick="dlg.close()">Schließen</button></div>
+<div class="actions" style="margin-top:12px"><button class="btn primary" onclick="saveEdit()">Speichern</button><button class="btn" onclick="testEdited()">Live testen</button><button id="trBtn" class="btn primary" onclick="manualTrPrice(edit.g,edit.id)">TR-Kurs</button><button id="sellBtn" class="btn primary" onclick="openSellFromEdit()">Verkaufen / archivieren</button><button id="del" class="btn danger" onclick="delEdit()">Löschen</button><button class="btn" onclick="dlg.close()">Schließen</button></div>
 <div id="editMsg" class="status"></div>
 </dialog>
 
+<dialog id="sellDlg">
+<h3 id="sellTitle">Position verkaufen</h3>
+<div id="sellInfo" class="sellInfo"></div>
+<div class="form">
+  <label>Verkaufskurs je Aktie €<input id="sSellPrice" type="number" step="0.01" inputmode="decimal"></label>
+  <label>Verkaufsgebühr €<input id="sSellFee" type="number" step="0.01" inputmode="decimal" value="1"></label>
+  <label>Verkaufsdatum<input id="sSellDate" type="date"></label>
+  <label class="wide">Notiz<input id="sSellNote" placeholder="z. B. Stop-Market ausgelöst"></label>
+</div>
+<div id="sellPreview" class="help"></div>
+<div class="actions" style="margin-top:12px">
+  <button class="btn primary" onclick="bookSale()">Verkauf buchen</button>
+  <button class="btn" onclick="sellDlg.close()">Abbrechen</button>
+</div>
+<div class="status">Die komplette Position wird aus dem aktiven Depot entfernt. Der Nettoerlös wird automatisch zur Cashreserve addiert.</div>
+</dialog>
+
 <script>
-const PRESET={"cash": 0, "positions": [], "watch": []},STORE='depotDashboardV3',APPVER='4.0',TR_TOL=0.005;let state=load(),edit={};
-(function upgradeTo40(){
+const PRESET={"cash": 0, "positions": [], "watch": [], "history": []},STORE='depotDashboardV3',APPVER='4.1',TR_TOL=0.005;let state=load(),edit={};
+(function upgradeTo41(){
   // Version 3.5 erhält bestehende Depotdaten und bereits gespeicherte Kurse.
   localStorage.setItem('depotDashboardAppVersion',APPVER);
 })();
 const $=id=>document.getElementById(id),clone=o=>JSON.parse(JSON.stringify(o));
 function load(){try{return norm(JSON.parse(localStorage.getItem(STORE))||clone(PRESET))}catch{return norm(clone(PRESET))}}
-function norm(s){s.cash=+s.cash||0;for(const g of ['positions','watch'])s[g]=(s[g]||[]).map((x,i)=>({...x,id:x.id||g+i,alerts:Array.isArray(x.alerts)?x.alerts.map(Number).filter(Number.isFinite):[],currentEur:+x.currentEur||null,nativePrice:+x.nativePrice||null,note:String(x.note||'')}));return s}
+function norm(s){
+  s.cash=+s.cash||0;
+  for(const g of ['positions','watch'])s[g]=(s[g]||[]).map((x,i)=>({...x,id:x.id||g+i,alerts:Array.isArray(x.alerts)?x.alerts.map(Number).filter(Number.isFinite):[],currentEur:+x.currentEur||null,nativePrice:+x.nativePrice||null,note:String(x.note||'')}));
+  s.history=(s.history||[]).map((h,i)=>({...h,id:h.id||('h'+i),qty:+h.qty||0,buy:+h.buy||0,buyFee:+h.buyFee||0,sellPrice:+h.sellPrice||0,sellFee:+h.sellFee||0,cost:+h.cost||0,proceeds:+h.proceeds||0,realized:+h.realized||0,note:String(h.note||'')}));
+  return s;
+}
 function save(){localStorage.setItem(STORE,JSON.stringify(state));render()}
 function eur(n){return new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(+n||0)}
 function n2(n){return new Intl.NumberFormat('de-DE',{maximumFractionDigits:2}).format(+n||0)}
@@ -327,12 +363,147 @@ function renderRiskCockpit(){
   }).join('');
 }
 
+
+let sellId=null;
+
+function isoDateLocal(d=new Date()){
+  const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+function openSellFromEdit(){
+  if(edit.g!=='positions' || edit.fresh)return;
+  $('dlg').close();
+  openSell(edit.id);
+}
+function openSell(id){
+  const p=state.positions.find(x=>x.id===id);
+  if(!p)return;
+  sellId=id;
+  $('sellTitle').textContent='Verkaufen: '+p.name;
+  $('sSellPrice').value=p.currentEur?Number(p.currentEur).toFixed(2):'';
+  $('sSellFee').value='1.00';
+  $('sSellDate').value=isoDateLocal();
+  $('sSellNote').value='';
+  $('sellInfo').textContent=`${n2(p.qty)} Stück · Kauf ${eur(p.buy)} · Kaufgebühr ${eur(p.fee)} · Einstand gesamt ${eur(p.qty*p.buy+p.fee)}`;
+  updateSellPreview();
+  $('sellDlg').showModal();
+}
+function updateSellPreview(){
+  const p=state.positions.find(x=>x.id===sellId);
+  if(!p)return;
+  const price=+$('sSellPrice').value||0;
+  const fee=+$('sSellFee').value||0;
+  const proceeds=p.qty*price-fee;
+  const cost=p.qty*p.buy+p.fee;
+  const realized=proceeds-cost;
+  $('sellPreview').innerHTML=price>0
+    ? `Nettozufluss Cash: <strong>${eur(proceeds)}</strong><br>Realisierter G/V inkl. Kauf- und Verkaufsgebühr: <strong class="${realized>=0?'good':'bad'}">${realized>=0?'+':''}${eur(realized)}</strong>`
+    : 'Verkaufskurs eingeben – danach siehst du Nettozufluss und realisierten Gewinn/Verlust.';
+}
+function bookSale(){
+  const p=state.positions.find(x=>x.id===sellId);
+  if(!p)return;
+  const sellPrice=+$('sSellPrice').value||0;
+  const sellFee=+$('sSellFee').value||0;
+  const soldDate=$('sSellDate').value||isoDateLocal();
+  const note=$('sSellNote').value.trim();
+
+  if(!(sellPrice>0)){alert('Bitte einen gültigen Verkaufskurs eingeben.');return}
+  if(sellFee<0){alert('Die Verkaufsgebühr darf nicht negativ sein.');return}
+
+  const cost=p.qty*p.buy+p.fee;
+  const gross=p.qty*sellPrice;
+  const proceeds=gross-sellFee;
+  const realized=proceeds-cost;
+
+  if(proceeds<0){alert('Der Nettoerlös wäre negativ. Bitte Verkaufskurs und Gebühr prüfen.');return}
+
+  const h={
+    id:'h'+Date.now(),
+    name:p.name,
+    symbol:p.symbol||'',
+    mic:p.mic||'',
+    qty:p.qty,
+    buy:p.buy,
+    buyFee:p.fee||0,
+    cost,
+    sellPrice,
+    sellFee,
+    gross,
+    proceeds,
+    realized,
+    soldAt:soldDate,
+    bookedAt:new Date().toISOString(),
+    note,
+    originalPosition:clone(p)
+  };
+
+  state.cash=+(state.cash+proceeds).toFixed(2);
+  state.history.push(h);
+  state.positions=state.positions.filter(x=>x.id!==p.id);
+  save();
+  $('sellDlg').close();
+  sellId=null;
+
+  alert(`${p.name} archiviert.\nNettozufluss: ${eur(proceeds)}\nRealisierter G/V: ${realized>=0?'+':''}${eur(realized)}\nNeue Cashreserve: ${eur(state.cash)}`);
+}
+function undoSale(id){
+  const h=state.history.find(x=>x.id===id);
+  if(!h)return;
+  if(state.positions.some(x=>x.id===h.originalPosition?.id)){
+    alert('Diese Position existiert bereits wieder im Depot.');
+    return;
+  }
+  if(!confirm(`Verkauf von ${h.name} rückgängig machen?\nDie Cashreserve wird um ${eur(h.proceeds)} reduziert.`))return;
+
+  state.cash=+(state.cash-h.proceeds).toFixed(2);
+  const restored=h.originalPosition?clone(h.originalPosition):{
+    id:'p'+Date.now(),name:h.name,qty:h.qty,buy:h.buy,fee:h.buyFee,stop:0,alerts:[],symbol:h.symbol,mic:h.mic,note:''
+  };
+  state.positions.push(restored);
+  state.history=state.history.filter(x=>x.id!==id);
+  save();
+}
+function renderHistory(){
+  const hist=[...(state.history||[])].sort((a,b)=>String(b.soldAt||'').localeCompare(String(a.soldAt||'')) || String(b.bookedAt||'').localeCompare(String(a.bookedAt||'')));
+  const totalPnl=hist.reduce((s,h)=>s+(+h.realized||0),0);
+  const totalProceeds=hist.reduce((s,h)=>s+(+h.proceeds||0),0);
+
+  $('histPnl').textContent=hist.length?((totalPnl>=0?'+':'')+eur(totalPnl)):'–';
+  $('histPnl').className=hist.length?(totalPnl>=0?'good':'bad'):'';
+  $('histProceeds').textContent=hist.length?eur(totalProceeds):'–';
+  $('histCount').textContent=String(hist.length);
+
+  if(!hist.length){
+    $('history').innerHTML='<div class="historyEmpty">Noch keine abgeschlossenen Verkäufe gespeichert.</div>';
+    return;
+  }
+
+  $('history').innerHTML=hist.map(h=>{
+    const pnlPct=h.cost>0?h.realized/h.cost*100:null;
+    const d=h.soldAt?new Intl.DateTimeFormat('de-DE').format(new Date(h.soldAt+'T12:00:00')):'–';
+    return `<div class="card">
+      <div class="top"><div><div class="name">${esc(h.name)}</div><div class="meta">${esc(h.symbol||'')} · verkauft ${d}</div></div><div class="price ${h.realized>=0?'good':'bad'}">${h.realized>=0?'+':''}${eur(h.realized)}</div></div>
+      <div class="kpis kpis4">
+        <div class="kpi"><span>Kauf</span><b>${eur(h.buy)}</b></div>
+        <div class="kpi"><span>Verkauf</span><b>${eur(h.sellPrice)}</b></div>
+        <div class="kpi"><span>Nettozufluss</span><b>${eur(h.proceeds)}</b></div>
+        <div class="kpi"><span>Rendite</span><b class="${h.realized>=0?'good':'bad'}">${pnlPct===null?'–':pct(pnlPct)}</b></div>
+      </div>
+      <div class="status">${n2(h.qty)} Stück · Kaufgebühr ${eur(h.buyFee)} · Verkaufsgebühr ${eur(h.sellFee)}</div>
+      ${h.note?`<div class="note">📝 ${esc(h.note)}</div>`:''}
+      <div class="actions" style="margin-top:9px"><button class="btn" onclick="undoSale('${h.id}')">Verkauf rückgängig</button></div>
+    </div>`;
+  }).join('');
+}
+
 function render(){
  let tv=0,tc=0,pc=0,np=0;
- $('positions').innerHTML=state.positions.map(p=>{let cost=p.qty*p.buy+p.fee,has=!!p.currentEur,val=has?p.qty*p.currentEur:0,pnl=has?val-cost:null,s=pStatus(p);tc+=cost;if(has){tv+=val;pc+=cost;np++}return `<div class="card"><div class="top"><div><div class="name">${esc(p.name)}</div><div class="meta">${esc(p.symbol||'kein Symbol')} · ${esc(p.mic||'ohne MIC')} · ${t(p.lastUpdated)}${sourceLabel(p)?' · '+sourceLabel(p):''}</div></div><div><div class="price">${has?eur(p.currentEur):'–'}</div><button class="btn" onclick="openEdit('positions','${p.id}')">Bearbeiten</button>${!isUS(p)?`<button class="btn primary" onclick="manualTrPrice(\'positions\',\'${p.id}\')">TR-Kurs</button>`:''}</div></div><div class="kpis kpis4"><div class="kpi"><span>Einstand inkl. Gebühr</span><b>${eur(cost)}</b></div><div class="kpi"><span>G/V</span><b class="${pnl===null?'':pnl>=0?'good':'bad'}">${pnl===null?'–':eur(pnl)}</b></div><div class="kpi"><span>Stop</span><b>${p.stop?eur(p.stop):'–'}</b></div><div class="kpi"><span>Risiko bis Stop</span><b>${positionRisk(p)?eur(positionRisk(p).eurRisk):'–'}</b></div></div><div>${badges(p.alerts,p.currentEur)}</div>${p.note?`<div class="note">📝 ${esc(p.note)}</div>`:''}<div class="status ${s[1]}">${s[0]}${p.nativePrice?' · '+n2(p.nativePrice)+' '+esc(p.nativeCurrency):''}</div></div>`}).join('');
+ $('positions').innerHTML=state.positions.map(p=>{let cost=p.qty*p.buy+p.fee,has=!!p.currentEur,val=has?p.qty*p.currentEur:0,pnl=has?val-cost:null,s=pStatus(p);tc+=cost;if(has){tv+=val;pc+=cost;np++}return `<div class="card"><div class="top"><div><div class="name">${esc(p.name)}</div><div class="meta">${esc(p.symbol||'kein Symbol')} · ${esc(p.mic||'ohne MIC')} · ${t(p.lastUpdated)}${sourceLabel(p)?' · '+sourceLabel(p):''}</div></div><div><div class="price">${has?eur(p.currentEur):'–'}</div><button class="btn" onclick="openEdit('positions','${p.id}')">Bearbeiten</button><button class="btn primary" onclick="openSell('${p.id}')">Verkaufen</button>${!isUS(p)?`<button class="btn primary" onclick="manualTrPrice(\'positions\',\'${p.id}\')">TR-Kurs</button>`:''}</div></div><div class="kpis kpis4"><div class="kpi"><span>Einstand inkl. Gebühr</span><b>${eur(cost)}</b></div><div class="kpi"><span>G/V</span><b class="${pnl===null?'':pnl>=0?'good':'bad'}">${pnl===null?'–':eur(pnl)}</b></div><div class="kpi"><span>Stop</span><b>${p.stop?eur(p.stop):'–'}</b></div><div class="kpi"><span>Risiko bis Stop</span><b>${positionRisk(p)?eur(positionRisk(p).eurRisk):'–'}</b></div></div><div>${badges(p.alerts,p.currentEur)}</div>${p.note?`<div class="note">📝 ${esc(p.note)}</div>`:''}<div class="status ${s[1]}">${s[0]}${p.nativePrice?' · '+n2(p.nativePrice)+' '+esc(p.nativeCurrency):''}</div></div>`}).join('');
  $('watch').innerHTML=state.watch.map(w=>{let s=wStatus(w);return `<div class="card"><div class="top"><div><div class="name">${esc(w.name)}</div><div class="meta">${esc(w.symbol||'kein Symbol')} · ${esc(w.mic||'ohne MIC')} · ${t(w.lastUpdated)}${sourceLabel(w)?' · '+sourceLabel(w):''}</div></div><div><div class="price">${w.currentEur?eur(w.currentEur):'–'}</div><button class="btn" onclick="openEdit('watch','${w.id}')">Bearbeiten</button>${!isUS(w)?`<button class="btn primary" onclick="manualTrPrice(\'watch\',\'${w.id}\')">TR-Kurs</button>`:''}</div></div><div>${badges(w.alerts,w.currentEur)}</div>${w.note?`<div class="note">📝 ${esc(w.note)}</div>`:''}<div class="status ${s[1]}">${s[0]}${w.nativePrice?' · '+n2(w.nativePrice)+' '+esc(w.nativeCurrency):''}</div></div>`}).join('');
  $('sCost').textContent=eur(tc);$('sValue').textContent=np?eur(tv):'–';let pe=$('sPnl');if(np){let p=tv-pc;pe.textContent=eur(p);pe.className=p>=0?'good':'bad'}else{pe.textContent='–';pe.className=''}$('sCash').textContent=eur(state.cash);$('cash').value=state.cash;$('apiKey').value=localStorage.getItem('tdKey')||'';
  renderRiskCockpit();
+ renderHistory();
 }
 function key(){return $('apiKey').value.trim()||localStorage.getItem('tdKey')||''}
 function saveKey(){let k=$('apiKey').value.trim();k?localStorage.setItem('tdKey',k):localStorage.removeItem('tdKey');$('apiMsg').textContent=k?'API-Key lokal gespeichert.':'API-Key entfernt.'}
@@ -565,7 +736,7 @@ async function testApi(){
 }
 function newItem(g){edit={g,id:(g==='positions'?'p':'w')+Date.now(),fresh:true};fill(g==='positions'?{name:'',qty:1,buy:0,fee:1,stop:0,alerts:[],symbol:'',mic:'',note:''}:{name:'',alerts:[],symbol:'',mic:'',note:''})}
 function openEdit(g,id){edit={g,id,fresh:false};fill(state[g].find(x=>x.id===id))}
-function fill(x){$('dlgTitle').textContent=(edit.fresh?'Neu: ':'Bearbeiten: ')+(edit.g==='positions'?'Depotposition':'Watchlist');$('eName').value=x.name||'';$('eQty').value=x.qty??1;$('eBuy').value=x.buy??0;$('eFee').value=x.fee??1;$('eStop').value=x.stop??0;$('eAlerts').value=(x.alerts||[]).join(', ');$('eSymbol').value=x.symbol||'';$('eMic').value=x.mic||'';$('eNote').value=x.note||'';document.querySelectorAll('.pos').forEach(e=>e.style.display=edit.g==='positions'?'block':'none');$('del').style.display=edit.fresh?'none':'inline-block';$('trBtn').style.display=(!edit.fresh&&!isUS(x))?'inline-block':'none';$('editMsg').textContent='';$('dlg').showModal()}
+function fill(x){$('dlgTitle').textContent=(edit.fresh?'Neu: ':'Bearbeiten: ')+(edit.g==='positions'?'Depotposition':'Watchlist');$('eName').value=x.name||'';$('eQty').value=x.qty??1;$('eBuy').value=x.buy??0;$('eFee').value=x.fee??1;$('eStop').value=x.stop??0;$('eAlerts').value=(x.alerts||[]).join(', ');$('eSymbol').value=x.symbol||'';$('eMic').value=x.mic||'';$('eNote').value=x.note||'';document.querySelectorAll('.pos').forEach(e=>e.style.display=edit.g==='positions'?'block':'none');$('del').style.display=edit.fresh?'none':'inline-block';$('trBtn').style.display=(!edit.fresh&&!isUS(x))?'inline-block':'none';$('sellBtn').style.display=(!edit.fresh&&edit.g==='positions')?'inline-block':'none';$('editMsg').textContent='';$('dlg').showModal()}
 function parseAlerts(){return $('eAlerts').value.split(/[;, ]+/).map(v=>+v.replace(',','.')).filter(v=>v>0)}
 function obj(){let o={id:edit.id,name:$('eName').value.trim(),alerts:parseAlerts(),symbol:$('eSymbol').value.trim().toUpperCase(),mic:$('eMic').value.trim().toUpperCase(),note:$('eNote').value.trim()};if(edit.g==='positions')Object.assign(o,{qty:+$('eQty').value||0,buy:+$('eBuy').value||0,fee:+$('eFee').value||0,stop:+$('eStop').value||0});return o}
 function saveEdit(){let o=obj();if(!o.name){$('editMsg').textContent='Name fehlt.';return}if(edit.fresh)state[edit.g].push(o);else Object.assign(state[edit.g].find(x=>x.id===edit.id),o);save();$('dlg').close()}
@@ -655,6 +826,7 @@ function storageTest(){
   }
 }
 function resetData(){if(confirm('Voreinstellung wiederherstellen?')){state=norm(clone(PRESET));save()}}
+['sSellPrice','sSellFee'].forEach(id=>$(id).addEventListener('input',updateSellPreview));
 render();
 scheduleAutoRefresh();
 setTimeout(()=>autoRefreshAll(false),1500);
